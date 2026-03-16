@@ -1,0 +1,17 @@
+<Project Sdk="WiX.Sdk/4.0.5">
+
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <ProductVersion>1.0.0</ProductVersion>
+    <!-- Path to the published RetroJukebox output (run publish first — see README) -->
+    <PublishDir>..\RetroJukebox\bin\Publish\</PublishDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WiX UI extension for the standard install wizard -->
+    <PackageReference Include="WiX.Sdk" Version="4.0.5" />
+    <PackageReference Include="WixToolset.UI.wixext" Version="4.0.5" />
+    <PackageReference Include="WixToolset.Util.wixext" Version="4.0.5" />
+  </ItemGroup>
+
+</Project>

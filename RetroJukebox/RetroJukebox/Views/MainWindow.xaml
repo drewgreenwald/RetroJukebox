@@ -1,0 +1,748 @@
+<Window x:Class="RetroJukebox.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:RetroJukebox.ViewModels"
+        xmlns:models="clr-namespace:RetroJukebox.Models"
+        xmlns:svcs="clr-namespace:RetroJukebox.Services"
+        xmlns:conv="clr-namespace:RetroJukebox.Converters"
+        xmlns:controls="clr-namespace:RetroJukebox.Controls"
+        xmlns:views="clr-namespace:RetroJukebox.Views"
+        Title="RetroJukebox" Height="800" Width="1100"
+        MinHeight="640" MinWidth="900"
+        Icon="/Resources/RetroJukebox.ico"
+        Style="{StaticResource JukeboxWindow}"
+        WindowStartupLocation="CenterScreen"
+        AllowsTransparency="False"
+        WindowStyle="SingleBorderWindow">
+
+    <Window.DataContext>
+        <vm:MainViewModel/>
+    </Window.DataContext>
+
+    <Window.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolVis"/>
+        <conv:InverseBoolToVisibilityConverter x:Key="InvBoolVis"/>
+        <conv:NullToVisibilityConverter x:Key="NullVis"/>
+        <conv:ByteArrayToImageConverter x:Key="ByteArrayToImage"/>
+        <conv:PlayStateIconConverter x:Key="PlayStateIcon"/>
+        <conv:RepeatModeConverter x:Key="RepeatConverter"/>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>  <!-- Title bar / branding -->
+            <RowDefinition Height="Auto"/>  <!-- Menu bar -->
+            <RowDefinition Height="Auto"/>  <!-- Now Playing / Transport -->
+            <RowDefinition Height="56"/>    <!-- Waveform scrubber + spectrum -->
+            <RowDefinition Height="*"/>     <!-- Main content area -->
+            <RowDefinition Height="Auto"/>  <!-- EQ panel (collapsible) -->
+            <RowDefinition Height="Auto"/>  <!-- Status bar -->
+        </Grid.RowDefinitions>
+
+        <!-- ══════════════════════════════════════════════════════════════════
+             ROW 0 – Branding header (MusicMatch vibe)
+        ══════════════════════════════════════════════════════════════════ -->
+        <Border Grid.Row="0" Background="{StaticResource ToolbarGradient}"
+                BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="0,0,0,1"
+                Height="36">
+            <Grid Margin="12,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Logo text -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Grid.Column="0">
+                    <TextBlock Text="RETRO" FontSize="15" FontWeight="Black"
+                               Foreground="{StaticResource AccentOrangeBrush}"
+                               VerticalAlignment="Center"/>
+                    <TextBlock Text="JUKEBOX" FontSize="15" FontWeight="Light"
+                               Foreground="{StaticResource TextPrimaryBrush}"
+                               Margin="4,0,0,0" VerticalAlignment="Center"/>
+                    <TextBlock Text="▶" FontSize="10" Foreground="{StaticResource AccentOrangeBrush}"
+                               Margin="6,0,0,0" VerticalAlignment="Center"/>
+                </StackPanel>
+
+                <!-- Sample rate indicator -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="SR:" Foreground="{StaticResource TextMutedBrush}" FontSize="10" VerticalAlignment="Center"/>
+                    <ComboBox Margin="4,0" FontSize="10" Width="80"
+                              SelectedValue="{Binding Audio.SampleRate, Mode=TwoWay}"
+                              SelectedValuePath="Tag">
+                        <ComboBoxItem Content="44.1 kHz" Tag="44100"/>
+                        <ComboBoxItem Content="48 kHz"   Tag="48000"/>
+                        <ComboBoxItem Content="88.2 kHz" Tag="88200"/>
+                        <ComboBoxItem Content="96 kHz"   Tag="96000"/>
+                        <ComboBoxItem Content="192 kHz"  Tag="192000"/>
+                    </ComboBox>
+                    <TextBlock Text="Quality:" Foreground="{StaticResource TextMutedBrush}"
+                               FontSize="10" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    <ComboBox Margin="4,0" FontSize="10" Width="90"
+                              SelectedValue="{Binding PlaybackQuality, Mode=TwoWay}"
+                              SelectedValuePath="Tag"
+                              ToolTip="Downsample source for lo-fi playback effect">
+                        <ComboBoxItem Content="Full"    Tag="0"/>
+                        <ComboBoxItem Content="128 kbps" Tag="128"/>
+                        <ComboBoxItem Content="64 kbps"  Tag="64"/>
+                        <ComboBoxItem Content="48 kbps"  Tag="48"/>
+                        <ComboBoxItem Content="32 kbps"  Tag="32"/>
+                    </ComboBox>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ══════════════════════════════════════════════════════════════════
+             ROW 1 – Menu / toolbar
+        ══════════════════════════════════════════════════════════════════ -->
+        <Border Grid.Row="1" Background="{StaticResource BgPanelBrush}"
+                BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="0,0,0,1">
+            <DockPanel Margin="6,4">
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" Margin="0,0,8,0">
+                    <Button Style="{StaticResource AccentButton}" Margin="2,0"
+                            Command="{Binding AddFolderCommand}" Content="＋ Add Folder"/>
+                    <Button Style="{StaticResource DarkButton}" Margin="2,0"
+                            Content="Add Files" Click="AddFilesClick"/>
+                    <Separator Width="1" Height="20" Background="{StaticResource SeparatorBrush}" Margin="6,0"/>
+                    <Button Style="{StaticResource DarkButton}" Margin="2,0"
+                            Content="Metadata Editor" Click="OpenMetadataEditor"/>
+                    <Button Style="{StaticResource DarkButton}" Margin="2,0"
+                            Content="Settings" Click="OpenSettings"/>
+                </StackPanel>
+
+                <!-- Search -->
+                <Grid DockPanel.Dock="Right" Width="220" VerticalAlignment="Center" Margin="4,0">
+                    <TextBox x:Name="SearchBox" Style="{StaticResource SearchBox}"
+                             Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
+                             VerticalContentAlignment="Center"/>
+                    <TextBlock Text="🔍  Search library…" IsHitTestVisible="False"
+                               Foreground="{StaticResource TextMutedBrush}"
+                               VerticalAlignment="Center" Margin="8,0"
+                               FontSize="11">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SearchQuery}" Value="">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
+            </DockPanel>
+        </Border>
+
+        <!-- ══════════════════════════════════════════════════════════════════
+             ROW 2 – Now Playing / Transport bar
+        ══════════════════════════════════════════════════════════════════ -->
+        <Border Grid.Row="2" Background="{StaticResource NowPlayingGradient}"
+                BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="0,0,0,1">
+            <Grid Margin="12,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>   <!-- Album art -->
+                    <ColumnDefinition Width="*"/>      <!-- Track info + seek -->
+                    <ColumnDefinition Width="Auto"/>   <!-- Transport -->
+                    <ColumnDefinition Width="Auto"/>   <!-- Volume + options -->
+                </Grid.ColumnDefinitions>
+
+                <!-- Album art -->
+                <Border Grid.Column="0" Width="80" Height="80" Margin="0,0,12,0"
+                        Background="{StaticResource BgCardBrush}" CornerRadius="4"
+                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                    <Grid>
+                        <TextBlock Text="♫" FontSize="28" Foreground="{StaticResource TextMutedBrush}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <Image x:Name="AlbumArtImg"
+                               Source="{Binding CurrentTrack.AlbumArt, Converter={StaticResource ByteArrayToImage}}"
+                               Stretch="UniformToFill" ClipToBounds="True">
+                            <Image.Style>
+                                <Style TargetType="Image">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CurrentTrack.AlbumArt}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding CurrentTrack.AlbumArt}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Image.Style>
+                        </Image>
+                    </Grid>
+                </Border>
+
+                <!-- Track info + seek bar -->
+                <Grid Grid.Column="1" VerticalAlignment="Stretch">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Track info -->
+                    <StackPanel Grid.Row="0" VerticalAlignment="Center">
+                        <!-- "No track selected" placeholder — only visible when nothing is playing -->
+                        <TextBlock Text="No track selected"
+                                   FontSize="14" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   TextTrimming="CharacterEllipsis">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CurrentTrack}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <!-- Track title — only visible when a track is loaded -->
+                        <TextBlock Text="{Binding CurrentTrack.DisplayTitle}"
+                                   FontSize="14" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   TextTrimming="CharacterEllipsis">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CurrentTrack}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding CurrentTrack.Artist, FallbackValue=''}"
+                                       FontSize="11" Foreground="{StaticResource AccentOrangeBrush}"
+                                       Margin="0,1,0,0"/>
+                            <TextBlock Text=" — " FontSize="11"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       Visibility="{Binding CurrentTrack.Album, Converter={StaticResource NullVis}}"/>
+                            <TextBlock Text="{Binding CurrentTrack.Album, FallbackValue=''}"
+                                       FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
+                                       Margin="0,1,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- Seek bar -->
+                    <Slider Grid.Row="1" Style="{StaticResource SeekSlider}"
+                            Minimum="0" Maximum="{Binding Duration}"
+                            Value="{Binding Position, Mode=TwoWay}"
+                            Margin="0,4,8,0"
+                            IsMoveToPointEnabled="True"
+                            PreviewMouseDown="Seek_PreviewMouseDown"
+                            PreviewMouseUp="Seek_PreviewMouseUp"/>
+
+                    <!-- Time display -->
+                    <Grid Grid.Row="2" Margin="0,0,8,0">
+                        <TextBlock Text="{Binding PositionText}" FontSize="10"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   HorizontalAlignment="Left" FontFamily="{StaticResource MonoFont}"/>
+                        <TextBlock Text="{Binding DurationText}" FontSize="10"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   HorizontalAlignment="Right" FontFamily="{StaticResource MonoFont}"/>
+                    </Grid>
+                </Grid>
+
+                <!-- Transport controls -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal"
+                            VerticalAlignment="Center" Margin="8,0">
+                    <Button Style="{StaticResource TransportButton}" Content="⏮"
+                            Command="{Binding PreviousCommand}" ToolTip="Previous"/>
+                    <Button Style="{StaticResource PlayButton}" Margin="4,0"
+                            Command="{Binding PlayCommand}"
+                            Content="{Binding IsPlaying, Converter={StaticResource PlayStateIcon}}"
+                            ToolTip="Play/Pause"/>
+                    <Button Style="{StaticResource TransportButton}" Content="⏭"
+                            Command="{Binding NextCommand}" ToolTip="Next"/>
+                    <Button Style="{StaticResource TransportButton}" Content="⏹"
+                            Command="{Binding StopCommand}" ToolTip="Stop" Margin="4,0,0,0"/>
+                </StackPanel>
+
+                <!-- Volume + shuffle/repeat -->
+                <StackPanel Grid.Column="3" Width="160" Margin="8,0,0,0" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <TextBlock Text="🔊" FontSize="11" Foreground="{StaticResource TextMutedBrush}"
+                                   VerticalAlignment="Center" Margin="0,0,4,0"/>
+                        <Slider Style="{StaticResource VolumeSlider}" Width="100"
+                                Minimum="0" Maximum="1"
+                                Value="{Binding Volume, Mode=TwoWay}"
+                                IsMoveToPointEnabled="True"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <ToggleButton Style="{StaticResource ToggleBtn}"
+                                      Content="⇄ Shuffle" FontSize="10" Padding="6,3" Margin="0,0,4,0"
+                                      IsChecked="{Binding Shuffle, Mode=TwoWay}"/>
+                        <ToggleButton Style="{StaticResource ToggleBtn}"
+                                      Content="↺ Repeat" FontSize="10" Padding="6,3"
+                                      IsChecked="{Binding RepeatMode, Converter={StaticResource RepeatConverter}, Mode=TwoWay}"
+                                      x:Name="RepeatBtn" Click="RepeatBtn_Click"/>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ══════════════════════════════════════════════════════════════════
+             ROW 3 – Waveform scrubber + Spectrum visualizer
+        ══════════════════════════════════════════════════════════════════ -->
+        <Border Grid.Row="3" Background="#0D0E12"
+                BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="0,1,0,1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="200"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Waveform scrubber fills left portion -->
+                <controls:WaveformScrubber
+                    Grid.Column="0"
+                    x:Name="WaveformScrubber"
+                    WaveformData="{Binding WaveformData}"
+                    Progress="{Binding WaveformProgress}"
+                    Background="#0D0E12"
+                    Cursor="Hand"
+                    Seek="WaveformScrubber_Seek"/>
+
+                <!-- Spectrum visualizer on the right -->
+                <controls:SpectrumVisualizer
+                    Grid.Column="1"
+                    x:Name="SpectrumViz"
+                    Background="#0D0E12"/>
+            </Grid>
+        </Border>
+
+        <!-- ══════════════════════════════════════════════════════════════════
+             ROW 4 – Main content: Library | Track list | Queue
+        ══════════════════════════════════════════════════════════════════ -->
+        <Grid Grid.Row="4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="170" MinWidth="120"/>     <!-- Left nav panel -->
+                <ColumnDefinition Width="5"/>                       <!-- Splitter -->
+                <ColumnDefinition Width="*" MinWidth="300"/>        <!-- Track list -->
+                <ColumnDefinition Width="5"/>                       <!-- Splitter -->
+                <ColumnDefinition Width="230" MinWidth="150"/>      <!-- Playlist queue -->
+            </Grid.ColumnDefinitions>
+
+            <!-- ── Left Nav Panel ─────────────────────────────────────── -->
+            <Border Grid.Column="0" Background="{StaticResource BgPanelBrush}"
+                    BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="0,0,1,0">
+                <DockPanel>
+                    <!-- View selector tabs -->
+                    <Border DockPanel.Dock="Top" Background="{StaticResource BgDeepBrush}"
+                            BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="0,0,0,1"
+                            Padding="0,6">
+                        <StackPanel>
+                            <TextBlock Text="BROWSE BY" FontSize="9" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       Margin="10,0,0,6"/>
+                            <Button Style="{StaticResource DarkButton}" HorizontalAlignment="Stretch"
+                                    HorizontalContentAlignment="Left" Margin="4,1" Padding="10,5"
+                                    Command="{Binding SetViewCommand}" CommandParameter="AllTracks"
+                                    Content="🎵  All Tracks"/>
+                            <Button Style="{StaticResource DarkButton}" HorizontalAlignment="Stretch"
+                                    HorizontalContentAlignment="Left" Margin="4,1" Padding="10,5"
+                                    Command="{Binding SetViewCommand}" CommandParameter="Artists"
+                                    Content="🎤  Artists"/>
+                            <Button Style="{StaticResource DarkButton}" HorizontalAlignment="Stretch"
+                                    HorizontalContentAlignment="Left" Margin="4,1" Padding="10,5"
+                                    Command="{Binding SetViewCommand}" CommandParameter="Albums"
+                                    Content="💿  Albums"/>
+                            <Button Style="{StaticResource DarkButton}" HorizontalAlignment="Stretch"
+                                    HorizontalContentAlignment="Left" Margin="4,1" Padding="10,5"
+                                    Command="{Binding SetViewCommand}" CommandParameter="Genres"
+                                    Content="🎸  Genres"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Tree items list (artists / albums / genres) -->
+                    <Border DockPanel.Dock="Top" Padding="0,6">
+                        <TextBlock Text="LIBRARY" FontSize="9" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   Margin="10,0,0,0"/>
+                    </Border>
+                    <ListBox Style="{StaticResource TreeNavList}"
+                             ItemContainerStyle="{StaticResource TreeNavListItem}"
+                             ItemsSource="{Binding TreeItems}"
+                             Margin="0,0,0,0"
+                             SelectionChanged="TreeNav_SelectionChanged"/>
+                </DockPanel>
+            </Border>
+
+            <!-- Splitter -->
+            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch"
+                          Background="{StaticResource BgDeepBrush}" Cursor="SizeWE"/>
+
+            <!-- ── Track List ──────────────────────────────────────────── -->
+            <Border Grid.Column="2" Background="{StaticResource BgSurfaceBrush}">
+                <DockPanel>
+                    <!-- Column header bar -->
+                    <Border DockPanel.Dock="Top" Background="{StaticResource BgPanelBrush}"
+                            BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="0,0,0,1"
+                            Padding="8,5">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11">
+                                <Run Text="{Binding DisplayedCount, Mode=OneWay}"/>
+                                <Run Text=" tracks"/>
+                            </TextBlock>
+                            <Button Style="{StaticResource DarkButton}" Margin="12,0,2,0"
+                                    FontSize="10" Padding="8,2"
+                                    Content="▶  Play All"
+                                    Command="{Binding AddFilesToQueueCommand}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Track list view -->
+                    <ListView Style="{StaticResource TrackListView}"
+                              ItemContainerStyle="{StaticResource TrackListViewItem}"
+                              ItemsSource="{Binding DisplayedTracks}"
+                              VirtualizingPanel.IsVirtualizing="True"
+                              VirtualizingPanel.VirtualizationMode="Recycling"
+                              MouseDoubleClick="TrackList_DoubleClick"
+                              x:Name="TrackListView">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Width="24">
+                                    <GridViewColumn.HeaderTemplate>
+                                        <DataTemplate><TextBlock Text=""/></DataTemplate>
+                                    </GridViewColumn.HeaderTemplate>
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="▶" FontSize="9"
+                                                       Foreground="{StaticResource AccentOrangeBrush}"
+                                                       Visibility="{Binding IsPlaying, Converter={StaticResource BoolVis}}"
+                                                       VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Width="36">
+                                    <GridViewColumn.Header>
+                                        <Button Content="{Binding DataContext.SortIndicatorTrackNum, RelativeSource={RelativeSource AncestorType=ListView}, StringFormat='# {0}'}"
+                                                Command="{Binding DataContext.SortByCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                                CommandParameter="TrackNumber"
+                                                Style="{StaticResource SortHeaderButton}"/>
+                                    </GridViewColumn.Header>
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding TrackNumber}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="11"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Width="220">
+                                    <GridViewColumn.Header>
+                                        <Button Content="{Binding DataContext.SortIndicatorTitle, RelativeSource={RelativeSource AncestorType=ListView}, StringFormat='Title {0}'}"
+                                                Command="{Binding DataContext.SortByCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                                CommandParameter="DisplayTitle"
+                                                Style="{StaticResource SortHeaderButton}"/>
+                                    </GridViewColumn.Header>
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding DisplayTitle}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Width="160">
+                                    <GridViewColumn.Header>
+                                        <Button Content="{Binding DataContext.SortIndicatorArtist, RelativeSource={RelativeSource AncestorType=ListView}, StringFormat='Artist {0}'}"
+                                                Command="{Binding DataContext.SortByCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                                CommandParameter="Artist"
+                                                Style="{StaticResource SortHeaderButton}"/>
+                                    </GridViewColumn.Header>
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Artist}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Width="150">
+                                    <GridViewColumn.Header>
+                                        <Button Content="{Binding DataContext.SortIndicatorAlbum, RelativeSource={RelativeSource AncestorType=ListView}, StringFormat='Album {0}'}"
+                                                Command="{Binding DataContext.SortByCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                                CommandParameter="Album"
+                                                Style="{StaticResource SortHeaderButton}"/>
+                                    </GridViewColumn.Header>
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Album}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Width="90">
+                                    <GridViewColumn.Header>
+                                        <Button Content="{Binding DataContext.SortIndicatorGenre, RelativeSource={RelativeSource AncestorType=ListView}, StringFormat='Genre {0}'}"
+                                                Command="{Binding DataContext.SortByCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                                CommandParameter="Genre"
+                                                Style="{StaticResource SortHeaderButton}"/>
+                                    </GridViewColumn.Header>
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Genre}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Width="50">
+                                    <GridViewColumn.Header>
+                                        <Button Content="{Binding DataContext.SortIndicatorYear, RelativeSource={RelativeSource AncestorType=ListView}, StringFormat='Year {0}'}"
+                                                Command="{Binding DataContext.SortByCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                                CommandParameter="Year"
+                                                Style="{StaticResource SortHeaderButton}"/>
+                                    </GridViewColumn.Header>
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Year}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="11"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Width="55">
+                                    <GridViewColumn.Header>
+                                        <Button Content="{Binding DataContext.SortIndicatorDuration, RelativeSource={RelativeSource AncestorType=ListView}, StringFormat='Time {0}'}"
+                                                Command="{Binding DataContext.SortByCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                                CommandParameter="Duration"
+                                                Style="{StaticResource SortHeaderButton}"/>
+                                    </GridViewColumn.Header>
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding DurationString}" Foreground="{StaticResource TextMutedBrush}" FontSize="11" FontFamily="{StaticResource MonoFont}"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                            </GridView>
+                        </ListView.View>
+                        <ListView.ContextMenu>
+                            <ContextMenu Background="{StaticResource BgCardBrush}"
+                                         BorderBrush="{StaticResource BorderBrush}">
+                                <MenuItem Header="▶  Play Now" Click="CtxPlay"
+                                          Foreground="{StaticResource TextPrimaryBrush}"/>
+                                <MenuItem Header="＋  Add to Queue" Click="CtxAddToQueue"
+                                          Foreground="{StaticResource TextPrimaryBrush}"/>
+                                <Separator/>
+                                <MenuItem Header="✏  Edit Metadata" Click="CtxEditMetadata"
+                                          Foreground="{StaticResource TextPrimaryBrush}"/>
+                                <MenuItem Header="🗑  Remove from Library" Click="CtxRemove"
+                                          Foreground="{StaticResource TextPrimaryBrush}"/>
+                            </ContextMenu>
+                        </ListView.ContextMenu>
+                    </ListView>
+                </DockPanel>
+            </Border>
+
+            <!-- Splitter -->
+            <GridSplitter Grid.Column="3" Width="5" HorizontalAlignment="Stretch"
+                          Background="{StaticResource BgDeepBrush}" Cursor="SizeWE"/>
+
+            <!-- ── Playlist Queue Panel ────────────────────────────────── -->
+            <Border Grid.Column="4" Background="{StaticResource BgPanelBrush}"
+                    BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="1,0,0,0">
+                <DockPanel>
+                    <!-- Queue header -->
+                    <Border DockPanel.Dock="Top" Background="{StaticResource BgDeepBrush}"
+                            BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="0,0,0,1"
+                            Padding="8,6">
+                        <Grid>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="PLAY QUEUE" FontSize="9" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextMutedBrush}"
+                                           VerticalAlignment="Center"/>
+                                <TextBlock Foreground="{StaticResource TextMutedBrush}"
+                                           FontSize="10" Margin="6,0" VerticalAlignment="Center">
+                                    <Run Text="{Binding Queue.Count, Mode=OneWay}"/>
+                                </TextBlock>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button Style="{StaticResource DarkButton}"
+                                        FontSize="9" Padding="6,2" Margin="0,0,4,0"
+                                        Content="📁 Open File…"
+                                        ToolTip="Add a file from disk to the queue without importing it to the library"
+                                        Click="QueueOpenFile_Click"/>
+                                <Button Style="{StaticResource DarkButton}"
+                                        FontSize="9" Padding="6,2" Content="Clear"
+                                        Command="{Binding ClearQueueCommand}"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Queue list -->
+                    <ListBox x:Name="QueueList"
+                             Background="{StaticResource BgPanelBrush}"
+                             BorderThickness="0"
+                             ItemsSource="{Binding Queue}"
+                             FontSize="11"
+                             ScrollViewer.HorizontalScrollBarVisibility="Hidden"
+                             MouseDoubleClick="Queue_DoubleClick"
+                             KeyDown="QueueList_KeyDown"
+                             AllowDrop="True"
+                             PreviewMouseLeftButtonDown="QueueList_PreviewMouseLeftButtonDown"
+                             PreviewMouseMove="QueueList_PreviewMouseMove"
+                             Drop="QueueList_Drop"
+                             DragOver="QueueList_DragOver">
+                        <ListBox.ContextMenu>
+                            <ContextMenu Background="{StaticResource BgCardBrush}"
+                                         BorderBrush="{StaticResource BorderBrush}">
+                                <MenuItem Header="▶  Play Now" Click="QueueCtxPlay"
+                                          Foreground="{StaticResource TextPrimaryBrush}"/>
+                                <Separator/>
+                                <MenuItem Header="⬆  Move Up"   Click="QueueCtxMoveUp"
+                                          Foreground="{StaticResource TextPrimaryBrush}"/>
+                                <MenuItem Header="⬇  Move Down" Click="QueueCtxMoveDown"
+                                          Foreground="{StaticResource TextPrimaryBrush}"/>
+                                <Separator/>
+                                <MenuItem Header="🗑  Remove from Queue" Click="QueueCtxRemove"
+                                          Foreground="{StaticResource TextPrimaryBrush}"/>
+                            </ContextMenu>
+                        </ListBox.ContextMenu>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <!-- File icon for transient (non-library) tracks -->
+                                    <TextBlock Grid.Column="0" Text="📁"
+                                               FontSize="9" VerticalAlignment="Center"
+                                               Margin="0,0,4,0"
+                                               ToolTip="Opened from disk — not in library"
+                                               Visibility="{Binding IsTransient, Converter={StaticResource BoolVis}}"/>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding DisplayTitle}"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                   TextTrimming="CharacterEllipsis" FontSize="11"/>
+                                        <TextBlock Text="{Binding Artist}"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="10" TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="2" Text="{Binding DurationString}"
+                                               Foreground="{StaticResource TextMutedBrush}"
+                                               FontSize="10" FontFamily="{StaticResource MonoFont}"
+                                               VerticalAlignment="Center" Margin="4,0,0,0"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Background"  Value="Transparent"/>
+                                <Setter Property="Padding"     Value="8,3"/>
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                                    Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgHoverBrush}"/>
+                                                </Trigger>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource BgSelectedBrush}"/>
+                                                </Trigger>
+                                                <DataTrigger Binding="{Binding IsPlaying}" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background">
+                                                        <Setter.Value>
+                                                            <SolidColorBrush Color="#1E2A10"/>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                </DataTrigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+        </Grid>
+
+        <!-- ══════════════════════════════════════════════════════════════════
+             ROW 5 – EQ Panel (collapsible)
+        ══════════════════════════════════════════════════════════════════ -->
+        <Expander Grid.Row="5"
+                  Header="  EQUALIZER"
+                  Foreground="{StaticResource TextSecondaryBrush}"
+                  Background="{StaticResource BgDeepBrush}"
+                  BorderBrush="{StaticResource SeparatorBrush}"
+                  BorderThickness="0,1,0,0"
+                  IsExpanded="False">
+            <Expander.HeaderTemplate>
+                <DataTemplate>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="🎚" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock Text="{Binding}" FontSize="10" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                </DataTemplate>
+            </Expander.HeaderTemplate>
+            <views:EqualizerPanel DataContext="{Binding Equalizer}"/>
+        </Expander>
+
+        <!-- ══════════════════════════════════════════════════════════════════
+             ROW 6 – Status bar
+        ══════════════════════════════════════════════════════════════════ -->
+        <Border Grid.Row="6" Background="{StaticResource BgDeepBrush}"
+                BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="0,1,0,0"
+                Height="24">
+            <Grid Margin="8,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="150"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0" Text="{Binding StatusText}" FontSize="10"
+                           Foreground="{StaticResource TextMutedBrush}"
+                           VerticalAlignment="Center"/>
+
+                <!-- Scanning progress bar -->
+                <ProgressBar Grid.Column="2"
+                             IsIndeterminate="True"
+                             Height="4" Margin="8,0"
+                             Foreground="{StaticResource AccentOrangeBrush}"
+                             Background="{StaticResource BgCardBrush}"
+                             BorderThickness="0"
+                             Visibility="{Binding IsScanning, Converter={StaticResource BoolVis}}"/>
+
+                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Ellipse Width="6" Height="6" Margin="0,0,4,0">
+                        <Ellipse.Style>
+                            <Style TargetType="Ellipse">
+                                <Setter Property="Fill" Value="{StaticResource TextMutedBrush}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsPlaying}" Value="True">
+                                        <Setter Property="Fill" Value="{StaticResource AccentGreenBrush}"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsScanning}" Value="True">
+                                        <Setter Property="Fill" Value="{StaticResource AccentOrangeBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Ellipse.Style>
+                    </Ellipse>
+                    <TextBlock FontSize="10" Foreground="{StaticResource TextMutedBrush}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Text" Value="Stopped"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsPlaying}" Value="True">
+                                        <Setter Property="Text" Value="Playing"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsScanning}" Value="True">
+                                        <Setter Property="Text" Value="Scanning…"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
