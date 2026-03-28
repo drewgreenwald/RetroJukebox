@@ -11,6 +11,9 @@ jobs:
   build:
     runs-on: windows-latest
 
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,10 +23,6 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      # Remove any stale obj/ or bin/ that were accidentally committed.
-      # These cause "type already defined" double-compilation errors because
-      # the WPF build system finds both the source files and the cached
-      # generated files from a previous local build.
       - name: Remove stale build artifacts
         shell: pwsh
         run: |
@@ -39,9 +38,6 @@ jobs:
           --configuration Release
           --no-restore
 
-      # ── Publish a self-contained, single-file exe ───────────────────────
-      # Runs on every push to main/master AND on version tags.
-      # PRs only get the build check above — no publish artifact.
       - name: Publish self-contained
         if: github.event_name != 'pull_request'
         run: >
@@ -62,7 +58,6 @@ jobs:
           path: publish/RetroJukebox.exe
           if-no-files-found: error
 
-      # ── GitHub Release (version tags only) ─────────────────────────────
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
