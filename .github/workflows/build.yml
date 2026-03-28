@@ -20,6 +20,16 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      # Remove any stale obj/ or bin/ that were accidentally committed.
+      # These cause "type already defined" double-compilation errors because
+      # the WPF build system finds both the source files and the cached
+      # generated files from a previous local build.
+      - name: Remove stale build artifacts
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force RetroJukebox/obj -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force RetroJukebox/bin -ErrorAction SilentlyContinue
+
       - name: Restore dependencies
         run: dotnet restore RetroJukebox/RetroJukebox.csproj
 
@@ -30,7 +40,7 @@ jobs:
           --no-restore
 
       # ── Publish a self-contained, single-file exe ───────────────────────
-      # This step runs on every push to main/master AND on version tags.
+      # Runs on every push to main/master AND on version tags.
       # PRs only get the build check above — no publish artifact.
       - name: Publish self-contained
         if: github.event_name != 'pull_request'
